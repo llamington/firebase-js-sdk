@@ -32,6 +32,12 @@ import {
   getMockResponse,
   getMockResponseStreaming
 } from '../../test-utils/mock-response';
+import { getGlobal } from '@firebase/util';
+import {
+  chromeAdapterFactory,
+  ChromeAdapterImpl
+} from '../methods/chrome-adapter';
+import { Availability, LanguageModel } from '../types/language-model';
 import sinonChai from 'sinon-chai';
 import * as generateContentMethods from '../methods/generate-content';
 import * as countTokens from '../methods/count-tokens';
@@ -39,7 +45,6 @@ import { VertexAIBackend } from '../backend';
 import { AIError } from '../errors';
 import chaiAsPromised from 'chai-as-promised';
 import { fakeChromeAdapter } from '../../test-utils/get-fake-firebase-services';
-import { Availability } from '../types/language-model';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -1112,4 +1117,44 @@ describe('validateGenerationConfig', () => {
       }).to.throw();
     }
   );
+});
+
+describe('chromeAdapterFactory in non-window environments', () => {
+  it('returns undefined when LanguageModel is not defined on global object', () => {
+    const globalObj = getGlobal() as Record<string, unknown>;
+    const originalLM = globalObj.LanguageModel;
+    try {
+      delete globalObj.LanguageModel;
+      const adapter = chromeAdapterFactory(
+        InferenceMode.PREFER_ON_DEVICE,
+        undefined
+      );
+      expect(adapter).to.be.undefined;
+    } finally {
+      if (originalLM !== undefined) {
+        globalObj.LanguageModel = originalLM;
+      }
+    }
+  });
+
+  it('instantiates ChromeAdapterImpl when LanguageModel is defined on globalThis without window', () => {
+    const globalObj = getGlobal() as Record<string, unknown>;
+    const originalLM = globalObj.LanguageModel;
+    const fakeLanguageModel = {} as LanguageModel;
+    try {
+      globalObj.LanguageModel = fakeLanguageModel;
+      const adapter = chromeAdapterFactory(
+        InferenceMode.PREFER_ON_DEVICE,
+        undefined
+      );
+      expect(adapter).to.be.an.instanceOf(ChromeAdapterImpl);
+      expect(adapter?.languageModelProvider).to.equal(fakeLanguageModel);
+    } finally {
+      if (originalLM !== undefined) {
+        globalObj.LanguageModel = originalLM;
+      } else {
+        delete globalObj.LanguageModel;
+      }
+    }
+  });
 });
